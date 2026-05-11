@@ -23,7 +23,7 @@ services:
     command: 
       - socat
       - UNIX-LISTEN:/mcp-sockets/sql.sock,fork,mode=777
-      - EXEC:mcp_sql_server.py
+      - EXEC:"python /app/mcp_sql_server.py"
     stdin_open: true
 
   mcp-nosql:
@@ -38,5 +38,5 @@ services:
     command: 
       - socat
       - UNIX-LISTEN:/mcp-sockets/nosql.sock,fork,mode=777
-      - EXEC:mcp_nosql_server.py
+      - EXEC:"python /app/mcp_nosql_server.py"
     stdin_open: true

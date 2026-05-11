@@ -30,6 +30,11 @@ def build_nosql_server_config() -> dict[str, dict[str, object]]:
 
 
 def build_all_servers_config() -> dict[str, dict[str, object]]:
+    """Configuración combinada: acceso a ambos servidores SQL + NoSQL."""
+    config = {}
+    config.update(build_sql_server_config())
+    config.update(build_nosql_server_config())
+    return config
     config = {}
     config.update(build_sql_server_config())
     config.update(build_nosql_server_config())

@@ -1,9 +1,13 @@
 import argparse
 import os
 
+from dotenv import load_dotenv
+
+load_dotenv()
+
 from smolagents import CodeAgent, LiteLLMModel, MCPClient
 
-from mcp_config import SQL_SERVER_PARAMS
+from mcp_config_smolagents import SQL_SERVER_PARAMS
 
 # Agente SQL (smolagents) — usa MCP por Unix socket. Ver FLUJO_CONEXION_MCP.md
 

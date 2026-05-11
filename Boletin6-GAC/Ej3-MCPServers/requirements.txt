@@ -3,5 +3,6 @@ litellm
 mcp
 langchain
 langgraph
-langchain-openai
+langchain-ollama
 langchain-mcp-adapters
+python-dotenv

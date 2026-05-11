@@ -1,579 +1,238 @@
-# Ejercicio 3: Agentes con cliente MCP (smolagents y LangChain/LangGraph)
+# Ejercicio 3: Agentes MCP con smolagents y LangChain
 
 ## Objetivo
 
-Adaptar los agentes del boletin anterior para que usen herramientas remotas de los servidores MCP ya creados:
+Conectar agentes a los servidores MCP ya desplegados en Docker usando sockets Unix persistentes y ejecutar el flujo completo con LLMs.
 
-- SQL MCP (`mcp_sql_service`)
-- NoSQL MCP (`mcp_nosql_service`)
+La entrega queda dividida en dos partes:
+- **smolagents**: dos pruebas individuales, una para SQL y otra para NoSQL.
+- **LangChain**: un único script con orquestador que resuelve la consulta completa según el tipo de pregunta.
 
-En este ejercicio, tanto `smolagents` como `LangChain/LangGraph` consumen herramientas MCP a través de **Unix sockets persistentes**, evitando la sobrecarga de reiniciar procesos en cada llamada.
+## Idea de diseño
 
-## Archivos
+En este ejercicio usamos un único modelo por framework para no añadir complejidad innecesaria:
+- smolagents usa Hugging Face con `HF_TOKEN`.
+- LangChain usa Ollama Cloud con `OLLAMA_API_KEY`.
 
-- `mcp_config.py`: configuración MCP para smolagents usando Unix sockets.
-- `mcp_config_langchain.py`: configuración MCP para LangChain/LangGraph usando Unix sockets.
-- `agent_sql_smolagents.py`: agente SQL con smolagents usando herramientas MCP.
-- `agent_nosql_smolagents.py`: agente NoSQL con smolagents usando herramientas MCP.
-- `agent_sql_langchain_mcp.py`: agente SQL con LangChain/LangGraph usando herramientas MCP.
-- `agent_nosql_langchain_mcp.py`: agente NoSQL con LangChain/LangGraph usando herramientas MCP.
-- `requirements.txt`: dependencias necesarias.
-- **`FLUJO_CONEXION_MCP.md`**: Documentación detallada del flujo de conexión (ver para profundizar).
+La selección del flujo es simple:
+- Si quieres probar SQL, ejecutas el agente SQL.
+- Si quieres probar NoSQL, ejecutas el agente NoSQL.
+- Si quieres resolver una consulta completa con LangChain, ejecutas el orquestador.
 
-## Flujo de Conexión (Resumen)
+## Archivos principales
 
-```
-Servidor MCP (Docker)              Cliente (Host)
-────────────────────────────────   ──────────────────
+- `mcp_config_smolagents.py`: configuración MCP para smolagents.
+- `mcp_config_langchain.py`: configuración MCP para LangChain.
+- `agent_sql_smolagents.py`: agente SQL con smolagents.
+- `agent_nosql_smolagents.py`: agente NoSQL con smolagents.
+- `agent_sql_langchain.py`: agente SQL con LangChain.
+- `agent_nosql_langchain.py`: agente NoSQL con LangChain.
+- `orchestrator_langchain.py`: orquestador LangChain que decide y resuelve la consulta completa.
+- `requirements.txt`: dependencias del ejercicio.
+- `FLUJO_CONEXION_MCP.md`: explicación detallada de la conexión por sockets Unix.
+- `ARQUITECTURA_ORQUESTADOR.md`: explicación de la parte de orquestación.
 
-socat UNIX-LISTEN:…                MCPClient / MultiServerMCPClient
-EXEC:mcp_sql_server.py  ◄──────────► socat UNIX-CONNECT:…
-                                    (smolagents / LangChain)
+## Flujo de ejecución correcto
 
-Conexión persistente por Unix socket → sin reiniciar servidor
-```
+### 1. Arrancar los servidores MCP en Ej1
 
-**Para detalles técnicos completos, ver `FLUJO_CONEXION_MCP.md`**
-
-## Requisitos previos
-
-### 1. Docker Compose (Ej1) corriendo en background
-
-Primero, asegúrate de tener los contenedores del Ej1 levantados:
+Primero levanta los contenedores del ejercicio anterior:
 
 ```bash
 cd ../Ej1-MCPServers
-
-# Reconstruir con la nueva configuración (socat en Dockerfiles)
 docker compose build
-
-# Levantar en background
 docker compose up -d
-
-# Verificar que estén corriendo
 docker compose ps
-# Esperado: mcp_sql_service, mcp_nosql_service, mongodb, mongo_seeding en estado "Up"
 ```
 
-### 2. Instalar `socat` en el host
+Debes ver activos `mcp_sql_service`, `mcp_nosql_service` y `mongodb`.
 
-`socat` es la herramienta que permite conectarse a los Unix sockets desde el host.
+### 2. Verificar que existen los sockets
 
-**En Linux (Debian/Ubuntu):**
 ```bash
-sudo apt-get update
-sudo apt-get install -y socat
+ls -la /tmp/mcp-sockets/
 ```
 
-**Verificar instalación:**
-```bash
-socat -V
-```
+Deberías ver:
+- `sql.sock`
+- `nosql.sock`
 
-### 3. Instalar dependencias Python en Ej3
+### 3. Instalar dependencias del Ej3
 
 ```bash
 cd ../Ej3-MCPServers
 python3 -m pip install -r requirements.txt
 ```
 
-### 4. Definir credenciales de LLM (opcional, solo si usas agentes con LLM)
+### 4. Definir credenciales del modelo
+
+Opción A: **Usando `.env`** (Recomendado)
+
+Edita el archivo `.env` y reemplaza los placeholders con tus credenciales:
 
 ```bash
-# Para smolagents
+# Edita .env
+HF_TOKEN=tu_token_huggingface_aqui
+OLLAMA_API_KEY=tu_ollama_cloud_token_aqui
+OLLAMA_BASE_URL=https://ollama.com
+OLLAMA_MODEL=gpt-oss:120b-cloud
+```
+
+Los scripts cargarán automáticamente las variables del `.env`.
+
+Opción B: **Usando variables de entorno**
+
+#### smolagents
+
+Usa Hugging Face con `HF_TOKEN`:
+
+```bash
 export HF_TOKEN="tu_token_huggingface"
-
-# Para LangChain/LangGraph
-export OPENAI_API_KEY="tu_api_key_openai"
-export OPENAI_MODEL="gpt-4o-mini"              # Opcional
-export OPENAI_BASE_URL="https://api.openai.com/v1"  # Opcional
 ```
 
-## Verificación de conectividad
+#### LangChain
 
-Antes de ejecutar agentes, verifica que los sockets están siendo escuchados:
+Usa Ollama Cloud con `OLLAMA_API_KEY`:
 
 ```bash
-# Ver los sockets disponibles
-ls -la /tmp/mcp-sockets/
-
-# Esperado:
-# sql.sock (Unix socket)
-# nosql.sock (Unix socket)
-
-# Probar conexión directa (debe responder sin error)
-echo '{"jsonrpc":"2.0","method":"initialize","params":{},"id":1}' | \
-  socat - UNIX-CONNECT:/tmp/mcp-sockets/sql.sock | head -1
-
-# Esperado: respuesta JSON válida
+export OLLAMA_API_KEY="tu_api_key_ollama"
+export OLLAMA_MODEL="gpt-oss:120b-cloud"
+export OLLAMA_BASE_URL="https://ollama.com"
 ```
 
-## Pruebas rápidas (sin LLM)
+## Flujo de entrega
 
-Puedes validar cada agente con invocación directa de herramienta MCP **sin credenciales de LLM**:
+### Parte 1: smolagents
 
-### Smolagents
+Aquí se hacen dos pruebas independientes:
 
-```bash
-# SQL directo
-python3 agent_sql_smolagents.py --direct-query "SELECT COUNT(*) FROM Artist;"
-
-# NoSQL directo
-python3 agent_nosql_smolagents.py --direct-list
-```
-
-### LangChain/LangGraph
+#### SQL
 
 ```bash
-# SQL directo
-python3 agent_sql_langchain_mcp.py --direct-query "SELECT COUNT(*) FROM Artist;"
-
-# NoSQL directo
-python3 agent_nosql_langchain_mcp.py --direct-list
-```
-
-## Ejecutar agentes con LLM (requiere credenciales)
-
-### Smolagents
-
-#### SQL con agente
-
-```bash
-export HF_TOKEN="tu_token"
 python3 agent_sql_smolagents.py --prompt "Cuantos artistas hay en Chinook?"
 ```
 
-#### NoSQL con agente
+**Resultado esperado:**
+```
+275
+```
+
+#### NoSQL
 
 ```bash
-export HF_TOKEN="tu_token"
 python3 agent_nosql_smolagents.py --prompt "Que colecciones hay en MongoDB?"
 ```
 
-### LangChain/LangGraph
+**Resultado esperado:**
+```
+Las colecciones disponibles en MongoDB son: productos
+```
 
-#### SQL con agente
+### Parte 2: LangChain con orquestador
+
+En esta parte, el flujo completo lo resuelve el script del orquestador.
+
+#### Consulta SQL
 
 ```bash
-export OPENAI_API_KEY="tu_api_key"
-python3 agent_sql_langchain_mcp.py --prompt "Cuantos artistas hay en Chinook?"
+python3 orchestrator_langchain.py --query "Cuantos artistas hay en Chinook?"
 ```
 
-#### NoSQL con agente
+**Resultado esperado:**
+```
+[(275,)]
+```
+
+#### Consulta NoSQL
 
 ```bash
-export OPENAI_API_KEY="tu_api_key"
-python3 agent_nosql_langchain_mcp.py --prompt "Que colecciones hay y cuantos documentos tienen?"
+python3 orchestrator_langchain.py --query "Que colecciones hay en MongoDB?"
 ```
 
-## ¿Cómo funciona?
-
-### Por qué Unix Sockets
-
-El despliegue usa **Unix sockets** en lugar de ejecutar `docker exec` cada vez:
-
-| Aspecto | Approach Anterior | Actual (Sockets) |
-|--------|------------------|-----------------|
-| **Servidor** | Se reinicia en cada llamada | Corre continuamente |
-| **Overhead** | ~500ms+ (reinicio) | ~0ms (reutiliza) |
-| **Comunicación** | CLI subprocess | stdio bidireccional |
-| **Eficiencia** | Baja | Alta ✅ |
-
-### Arquitectura
-
+**Resultado esperado:**
 ```
-Docker Container (long-running)                  Host
-─────────────────────────────────────────────    ────────
-
-mcp_sql_server.py                                 MCPClient (smolagents)
-        ↑                                               ↑
-    stdio loop                                    stdio connection
-        ↑                                               ↑
-socat UNIX-LISTEN                                  socat UNIX-CONNECT
-    ↓                                                   ↓
-/mcp-sockets/sql.sock ◄─────────────────────────► /tmp/mcp-sockets/sql.sock
-
-→ Conexión persistente, sin reiniciar
+productos
 ```
 
-Para detalles técnicos, diagrama completo, y explicación paso a paso, ver **`FLUJO_CONEXION_MCP.md`**.
+#### Consulta SQL con LLM
+
+```bash
+python3 orchestrator_langchain.py --query "Cual es el género más popular en la tabla Genre?"
+```
+
+**Resultado esperado:**
+```
+[('Rock', 1297)]
+```
+
+## Flujo de conexión MCP
+
+Los agentes no hablan con la base de datos directamente. El flujo real es:
+
+1. Docker levanta los servidores MCP.
+2. Cada servidor expone un socket Unix en `/tmp/mcp-sockets/`.
+3. El agente local se conecta a ese socket con `socat`.
+4. El cliente MCP obtiene las herramientas disponibles.
+5. El agente ejecuta la herramienta correspondiente.
+
+Esquema simplificado:
+
+```text
+Agente local -> socat -> /tmp/mcp-sockets/sql.sock -> servidor MCP -> base de datos
+```
+
+Para el detalle completo del flujo, ver [FLUJO_CONEXION_MCP.md](FLUJO_CONEXION_MCP.md).
 
 ## Troubleshooting
 
-### Error: "Permission denied" al conectar a socket
+### No aparece `sql.sock` o `nosql.sock`
 
-```
-FileNotFoundError: [Errno 13] Permission denied: '/tmp/mcp-sockets/sql.sock'
-```
-
-**Solución:**
-```bash
-# Verificar permisos del socket
-ls -la /tmp/mcp-sockets/sql.sock
-
-# Deben tener permisos 777 o al menos para tu usuario
-# Si no, reconstruir docker-compose:
-cd ../Ej1-MCPServers
-docker compose down -v
-docker compose build
-docker compose up -d
-```
-
-### Error: "Connection refused" al conectar a socket
-
-```
-errno 111: Connection refused
-```
-
-**Solución:**
-```bash
-# Verificar que los contenedores están corriendo
-docker compose -f ../Ej1-MCPServers/docker-compose.yml ps
-
-# Si no están UP, levantarlos:
-cd ../Ej1-MCPServers
-docker compose up -d
-
-# Esperar a que estén listos (suele tardar ~5-10 segundos)
-sleep 5
-
-# Verificar socket nuevamente
-ls -la /tmp/mcp-sockets/
-```
-
-### Error: "socat: command not found"
-
-```
-FileNotFoundError: [Errno 2] No such file or directory: 'socat'
-```
-
-**Solución:**
-```bash
-# Instalar socat en el host
-sudo apt-get install -y socat
-
-# Verificar
-socat -V
-```
-
-### Error: LLM credentials not provided (smolagents)
-
-```
-EnvironmentError: Define HF_TOKEN para ejecutar el agente con LLM.
-```
-
-**Solución:**
-```bash
-export HF_TOKEN="tu_token_valido"
-python3 agent_sql_smolagents.py --prompt "..."
-```
-
-Para obtener token: https://huggingface.co/settings/tokens
-
-### Error: LLM credentials not provided (LangChain)
-
-```
-EnvironmentError: Define OPENAI_API_KEY para ejecutar el agente con LLM.
-```
-
-**Solución:**
-```bash
-export OPENAI_API_KEY="tu_api_key_valida"
-python3 agent_sql_langchain_mcp.py --prompt "..."
-```
-
-Para obtener API key: https://platform.openai.com/api-keys
-
-## Notas importantes
-
-- **Las opciones `--direct-*`** no requieren credenciales de LLM. Invocan la herramienta MCP directamente.
-- **Las opciones `--prompt`** sí requieren credenciales del proveedor LLM.
-- **Los contenedores deben estar corriendo** antes de ejecutar cualquier agente.
-- **Los sockets persisten** mientras Docker Compose esté activo. Para limpiar:
-  ```bash
-  cd ../Ej1-MCPServers
-  docker compose down -v
-  ```
-- **La comunicación es local (Unix sockets)**, no requiere TCP, HTTP ni acceso a red.
-
-## Arquitectura: Unix Sockets (Persistente)
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│ Host (Cliente MCP - smolagents / LangChain)                     │
-│                                                                 │
-│  mcp_config.py:                                                 │
-│  command="socat"                                                │
-│  args=["-", "UNIX-CONNECT:/tmp/mcp-sockets/sql.sock"]          │
-└────────────────────────────┬────────────────────────────────────┘
-                             │
-                   stdio (persistente)
-                             │
-                             ▼
-                    /tmp/mcp-sockets/sql.sock
-                    (Unix domain socket)
-                             │
-                   stdio (persistente)
-                             │
-                             ▼
-┌────────────────────────────────────────────────────────────────┐
-│ Contenedor Docker (Servidor MCP - long-running)               │
-│                                                                │
-│  docker-compose.yml:                                           │
-│  command: ["socat", "UNIX-LISTEN:/mcp-sockets/sql.sock",      │
-│            "EXEC:mcp_sql_server.py"]                          │
-│                                                                │
-│  Status: UP (siempre corriendo)                              │
-└────────────────────────────────────────────────────────────────┘
-```
-
-### Ventajas sobre `docker exec`
-
-| Aspecto | docker exec | Unix Sockets |
-|--------|-------------|--------------|
-| **Servidor** | Inicia cada vez | Corre continuamente ✅ |
-| **Startup** | ~500ms+ | ~0ms (reutiliza conexión) ✅ |
-| **Overhead** | Alto (reinicia proceso) | Mínimo ✅ |
-| **Comunicación** | CLI subprocess | stdio persistente ✅ |
-
-## Por qué `mcp_config.py` y `mcp_config_langchain.py` son claves
-
-Estos módulos son la pieza de integración MCP para ambos enfoques.
-
-- **Definen servidores SQL y NoSQL** en un punto central con sockets Unix.
-- **Usan `socat`** para conectarse al socket del servidor ya levantado.
-- **Evitan duplicar configuración** en cada agente.
-- **Reutilizan la conexión persistente**: No reinician procesos.
-- **Permiten cambiar comando/socket en un solo sitio**.
-
-Flujo resumido:
-
-1. Docker Compose levanta servidores MCP configurados con `socat UNIX-LISTEN` (Ej1).
-2. Los servidores publican sus interfaces stdio en `/tmp/mcp-sockets/`.
-3. El agente crea un cliente MCP (`MCPClient` o `MultiServerMCPClient`).
-4. El cliente conecta vía `socat UNIX-CONNECT` a los sockets persistentes.
-5. `get_tools()` devuelve herramientas MCP listas para el agente.
-6. El agente ejecuta esas herramientas como si fueran locales.
-
-## Requisitos previos
-
-### 1. Docker Compose (Ej1) corriendo en background
-
-Primero, asegúrate de tener los contenedores del Ej1 levantados:
+Si el directorio existe pero no aparecen los sockets, revisa que los contenedores MCP estén en ejecución:
 
 ```bash
 cd ../Ej1-MCPServers
-
-# Reconstruir con la nueva configuración (socat en Dockerfiles)
-docker compose build
-
-# Levantar en background
-docker compose up -d
-
-# Verificar que estén corriendo
 docker compose ps
-# Esperado: mcp_sql_service, mcp_nosql_service, mongodb, mongo_seeding en estado "Up"
 ```
 
-### 2. Instalar `socat` en el host
-
-`socat` es la herramienta que permite conectarse a los Unix sockets desde el host.
-
-**En Linux (Debian/Ubuntu):**
-```bash
-sudo apt-get update
-sudo apt-get install -y socat
-```
-
-**Verificar instalación:**
-```bash
-socat -V
-```
-
-### 3. Instalar dependencias Python en Ej3
+Si no están arriba:
 
 ```bash
-cd ../Ej3-MCPServers
-python3 -m pip install -r requirements.txt
+docker compose build
+docker compose up -d
 ```
 
-### 4. Definir credenciales de LLM (opcional, solo si usas agentes con LLM)
+### Error de credenciales
+
+#### smolagents
+
+```text
+Define HF_TOKEN para ejecutar el agente con LLM.
+```
+
+#### LangChain
+
+```text
+Define OLLAMA_API_KEY para ejecutar LangChain con Ollama.
+```
+
+### Error de conexión al socket
+
+Si sale un error tipo `No such file or directory`, normalmente significa que el contenedor MCP no llegó a crear el socket. En ese caso:
 
 ```bash
-# Para smolagents
-export HF_TOKEN="tu_token_huggingface"
-
-# Para LangChain/LangGraph
-export OPENAI_API_KEY="tu_api_key_openai"
-export OPENAI_MODEL="gpt-4o-mini"              # Opcional
-export OPENAI_BASE_URL="https://api.openai.com/v1"  # Opcional
-```
-
-## Verificacion de conectividad
-
-Antes de ejecutar agentes, verifica que los sockets están siendo escuchados:
-
-```bash
-# Ver los sockets disponibles
-ls -la /tmp/mcp-sockets/
-
-# Esperado:
-# sql.sock (Unix socket)
-# nosql.sock (Unix socket)
-
-# Probar conexión directa (debe responder sin error)
-echo '{"jsonrpc":"2.0","method":"initialize","params":{},"id":1}' | \
-  socat - UNIX-CONNECT:/tmp/mcp-sockets/sql.sock | head -1
-
-# Esperado: respuesta JSON válida
-```
-
-## Pruebas rápidas (sin LLM)
-
-Puedes validar cada agente con invocación directa de herramienta MCP **sin credenciales de LLM**:
-
-```bash
-# SQL directo (smolagents)
-python3 agent_sql_mcp.py --direct-query "SELECT COUNT(*) FROM Artist;"
-
-# NoSQL directo (smolagents)
-python3 agent_nosql_mcp.py --direct-list
-
-# SQL directo (LangChain/LangGraph)
-python3 agent_sql_langchain_mcp.py --direct-query "SELECT COUNT(*) FROM Artist;"
-
-# NoSQL directo (LangChain/LangGraph)
-python3 agent_nosql_langchain_mcp.py --direct-list
-```
-
-## Ejecutar agentes con LLM (requiere credenciales)
-
-### smolagents
-
-#### SQL con agente
-
-```bash
-export HF_TOKEN="tu_token"
-python3 agent_sql_mcp.py --prompt "Cuantos artistas hay en Chinook?"
-```
-
-#### NoSQL con agente
-
-```bash
-export HF_TOKEN="tu_token"
-python3 agent_nosql_mcp.py --prompt "Que colecciones hay en MongoDB?"
-```
-
-### LangChain/LangGraph
-
-#### SQL con agente
-
-```bash
-export OPENAI_API_KEY="tu_api_key"
-python3 agent_sql_langchain_mcp.py --prompt "Cuantos artistas hay en Chinook?"
-```
-
-#### NoSQL con agente
-
-```bash
-export OPENAI_API_KEY="tu_api_key"
-python3 agent_nosql_langchain_mcp.py --prompt "Que colecciones hay y cuantos documentos tienen?"
-```
-
-## Troubleshooting
-
-### Error: "Permission denied" al conectar a socket
-
-```
-FileNotFoundError: [Errno 13] Permission denied: '/tmp/mcp-sockets/sql.sock'
-```
-
-**Solución:**
-```bash
-# Verificar permisos del socket
-ls -la /tmp/mcp-sockets/sql.sock
-
-# Deben tener permisos 777 o al menos para tu usuario
-# Si no, reconstruir docker-compose:
 cd ../Ej1-MCPServers
 docker compose down -v
 docker compose build
 docker compose up -d
 ```
 
-### Error: "Connection refused" al conectar a socket
+## Resumen
 
-```
-errno 111: Connection refused
-```
-
-**Solución:**
-```bash
-# Verificar que los contenedores están corriendo
-docker compose -f ../Ej1-MCPServers/docker-compose.yml ps
-
-# Si no están UP, levantarlos:
-cd ../Ej1-MCPServers
-docker compose up -d
-
-# Esperar a que estén listos (suele tardar ~5-10 segundos)
-sleep 5
-
-# Verificar socket nuevamente
-ls -la /tmp/mcp-sockets/
-```
-
-### Error: "socat: command not found"
-
-```
-FileNotFoundError: [Errno 2] No such file or directory: 'socat'
-```
-
-**Solución:**
-```bash
-# Instalar socat en el host
-sudo apt-get install -y socat
-
-# Verificar
-socat -V
-```
-
-### Error: LLM credentials not provided (smolagents)
-
-```
-EnvironmentError: Define HF_TOKEN para ejecutar el agente con LLM.
-```
-
-**Solución:**
-```bash
-export HF_TOKEN="tu_token_valido"
-python3 agent_sql_mcp.py --prompt "..."
-```
-
-Para obtener token: https://huggingface.co/settings/tokens
-
-### Error: LLM credentials not provided (LangChain)
-
-```
-EnvironmentError: Define OPENAI_API_KEY para ejecutar el agente con LLM.
-```
-
-**Solución:**
-```bash
-export OPENAI_API_KEY="tu_api_key_valida"
-python3 agent_sql_langchain_mcp.py --prompt "..."
-```
-
-Para obtener API key: https://platform.openai.com/api-keys
-
-## Notas importantes
-
-- **Las opciones `--direct-*`** no requieren credenciales de LLM. Invocan la herramienta MCP directamente.
-- **Las opciones `--prompt`** sí requieren credenciales del proveedor LLM.
-- **Los contenedores deben estar corriendo** antes de ejecutar cualquier agente.
-- **Los sockets persisten** mientras Docker Compose esté activo. Para limpiar:
-  ```bash
-  cd ../Ej1-MCPServers
-  docker compose down -v
-  ```
-- **La comunicación es local (Unix sockets)**, no requiere TCP, HTTP ni acceso a red.
+- smolagents usa `HF_TOKEN` (cargado desde `.env` o variable de entorno).
+- smolagents se presenta con dos pruebas individuales: SQL y NoSQL.
+- LangChain usa `OLLAMA_API_KEY` (cargado desde `.env` o variable de entorno).
+- LangChain resuelve la consulta completa desde `orchestrator_langchain.py`.
+- El router automático detecta si usar SQL, NoSQL o ambos.
+- La traducción de preguntas naturales a SQL se hace con LLM.
+- La conexión a MCP se hace por sockets Unix persistentes.
+- Las credenciales se cargan automáticamente desde `.env` con `python-dotenv`.
