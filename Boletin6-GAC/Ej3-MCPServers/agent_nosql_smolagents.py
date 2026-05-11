@@ -5,6 +5,8 @@ from smolagents import CodeAgent, LiteLLMModel, MCPClient
 
 from mcp_config import NOSQL_SERVER_PARAMS
 
+# Agente NoSQL (smolagents) — usa MCP por Unix socket. Ver FLUJO_CONEXION_MCP.md
+
 
 def build_model() -> LiteLLMModel:
     hf_token = os.getenv("HF_TOKEN")
@@ -18,6 +20,8 @@ def build_model() -> LiteLLMModel:
 
 
 def run_agent(prompt: str) -> str:
+    """Ejecuta agente NoSQL con LLM usando herramientas MCP."""
+    # MCPClient se conecta al socket Unix y obtiene las herramientas
     with MCPClient(NOSQL_SERVER_PARAMS, structured_output=False) as tools:
         agent = CodeAgent(
             tools=tools,
@@ -28,6 +32,7 @@ def run_agent(prompt: str) -> str:
 
 
 def run_direct_list_collections() -> str:
+    """Lista colecciones de MongoDB directamente sin LLM."""
     with MCPClient(NOSQL_SERVER_PARAMS, structured_output=False) as tools:
         list_tool = next(t for t in tools if t.name == "list_collections")
         return str(list_tool())

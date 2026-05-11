@@ -1,0 +1,15 @@
+{
+  "github.copilot.chat.mcpServers": {
+    "sql-server": {
+      "command": "docker",
+      "args": ["exec", "-i", "mcp_sql_service", "python", "/app/mcp_sql_server.py"]
+    },
+    "nosql-server": {
+      "command": "docker",
+      "args": ["exec", "-i", "mcp_nosql_service", "python", "/app/mcp_nosql_server.py"],
+      "env": {
+        "MONGO_URI": "mongodb://mongodb:27017/"
+      }
+    }
+  }
+}

@@ -19,13 +19,24 @@ services:
     container_name: mcp_sql_service
     volumes:
       - ../../Chinook.sqlite:/Chinook.sqlite
-    command: ["mcp_sql_server.py"]
+      - /tmp/mcp-sockets:/mcp-sockets
+    command: 
+      - socat
+      - UNIX-LISTEN:/mcp-sockets/sql.sock,fork,mode=777
+      - EXEC:mcp_sql_server.py
+    stdin_open: true
 
   mcp-nosql:
     build: ./mcp-nosql
     container_name: mcp_nosql_service
     environment:
       - MONGO_URI=mongodb://mongodb:27017/
+    volumes:
+      - /tmp/mcp-sockets:/mcp-sockets
     depends_on:
       - mongodb
-    command: ["mcp_nosql_server.py"]
+    command: 
+      - socat
+      - UNIX-LISTEN:/mcp-sockets/nosql.sock,fork,mode=777
+      - EXEC:mcp_nosql_server.py
+    stdin_open: true

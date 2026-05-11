@@ -5,6 +5,8 @@ from smolagents import CodeAgent, LiteLLMModel, MCPClient
 
 from mcp_config import SQL_SERVER_PARAMS
 
+# Agente SQL (smolagents) — usa MCP por Unix socket. Ver FLUJO_CONEXION_MCP.md
+
 
 def build_model() -> LiteLLMModel:
     hf_token = os.getenv("HF_TOKEN")
@@ -18,12 +20,13 @@ def build_model() -> LiteLLMModel:
 
 
 def run_agent(prompt: str) -> str:
-    # MCP tools requieren argumentos nombrados (keyword args), no posicionales.
+    """Ejecuta agente SQL con LLM usando herramientas MCP."""
     agent_instructions = (
         "Usa herramientas MCP solo con argumentos nombrados. "
         "Para SQL llama execute_sql_query(query=\"...\"). "
         "No uses argumentos posicionales en llamadas a tools."
     )
+    # MCPClient se conecta al socket Unix y obtiene las herramientas
     with MCPClient(SQL_SERVER_PARAMS, structured_output=False) as tools:
         agent = CodeAgent(
             tools=tools,
@@ -34,6 +37,7 @@ def run_agent(prompt: str) -> str:
 
 
 def run_direct_sql(query: str) -> str:
+    """Ejecuta una query SQL directamente sin LLM."""
     with MCPClient(SQL_SERVER_PARAMS, structured_output=False) as tools:
         sql_tool = next(t for t in tools if t.name == "execute_sql_query")
         return str(sql_tool(query=query))

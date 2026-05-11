@@ -1,3 +1,7 @@
 smolagents[mcp]
 litellm
 mcp
+langchain
+langgraph
+langchain-openai
+langchain-mcp-adapters
